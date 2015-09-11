@@ -21,6 +21,7 @@ from compressor.conf import settings
 from compressor.exceptions import (CompressorError, UncompressableFileError,
         FilterDoesNotExist)
 from compressor.filters import CachedCompilerFilter
+from compressor.filters.css_default import CssAbsoluteFilter
 from compressor.storage import compressor_file_storage
 from compressor.signals import post_compress
 from compressor.utils import get_class, get_mod_func, staticfiles
@@ -209,20 +210,21 @@ class Compressor(object):
                 precompiled, value = self.precompile(value, **options)
 
             if enabled:
-                yield self.filter(value, **options)
+                yield self.filter(value, self.cached_filters, **options)
+            elif precompiled:
+                if CssAbsoluteFilter in self.cached_filters:
+                    value = self.filter(value, [CssAbsoluteFilter], **options)
+                yield self.handle_output(kind, value, forced=True,
+                                         basename=basename)
             else:
-                if precompiled:
-                    yield self.handle_output(kind, value, forced=True,
-                                             basename=basename)
-                else:
-                    yield self.parser.elem_str(elem)
+                yield self.parser.elem_str(elem)
 
     def filter_output(self, content):
         """
         Passes the concatenated content to the 'output' methods
         of the compressor filters.
         """
-        return self.filter(content, method=METHOD_OUTPUT)
+        return self.filter(content, self.cached_filters, method=METHOD_OUTPUT)
 
     def filter_input(self, forced=False):
         """
@@ -274,8 +276,8 @@ class Compressor(object):
 
         return False, content
 
-    def filter(self, content, method, **kwargs):
-        for filter_cls in self.cached_filters:
+    def filter(self, content, filters, method, **kwargs):
+        for filter_cls in filters:
             filter_func = getattr(
                 filter_cls(content, filter_type=self.type), method)
             try:
